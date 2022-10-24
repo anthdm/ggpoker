@@ -1,18 +1,38 @@
 package p2p
 
-type Round uint32
+type GameStatus uint32
+
+func (g GameStatus) String() string {
+	switch g {
+	case GameStatusWaiting:
+		return "WAITING"
+	case GameStatusDealing:
+		return "DEALING"
+	case GameStatusPreFlop:
+		return "PRE FLP"
+	case GameStatusFlop:
+		return "FLOP"
+	case GameStatusTurn:
+		return "TURN"
+	case GameStatusRiver:
+		return "RIVER"
+	default:
+		return "unknown"
+	}
+}
 
 const (
-	Dealing Round = iota
-	PreFlop
-	Flop
-	Turn
-	River
+	GameStatusWaiting GameStatus = iota
+	GameStatusDealing
+	GameStatusPreFlop
+	GameStatusFlop
+	GameStatusTurn
+	GameStatusRiver
 )
 
 type GameState struct {
-	isDealer bool   // atomic accessable
-	Round    uint32 // atomic accessable
+	isDealer   bool       // should be atomic accessable !
+	gameStatus GameStatus // should be atomic accessable !
 }
 
 func NewGameState() *GameState {

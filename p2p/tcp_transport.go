@@ -1,21 +1,20 @@
 package p2p
 
 import (
-	"bytes"
-	"fmt"
-	"io"
+	"encoding/gob"
 	"net"
 
 	"github.com/sirupsen/logrus"
 )
 
-type Message struct {
-	Payload io.Reader
-	From    net.Addr
-}
+type NetAddr string
+
+func (n NetAddr) String() string  { return string(n) }
+func (n NetAddr) Network() string { return "tcp" }
 
 type Peer struct {
-	conn net.Conn
+	conn     net.Conn
+	outbound bool
 }
 
 func (p *Peer) Send(b []byte) error {
@@ -24,18 +23,26 @@ func (p *Peer) Send(b []byte) error {
 }
 
 func (p *Peer) ReadLoop(msgch chan *Message) {
-	buf := make([]byte, 1024)
+	// buf := make([]byte, 1024)
 
 	for {
-		n, err := p.conn.Read(buf)
-		if err != nil {
+		// n, err := p.conn.Read(buf)
+		// if err != nil {
+		// 	break
+		// }
+
+		msg := new(Message)
+		if err := gob.NewDecoder(p.conn).Decode(msg); err != nil {
+			logrus.Errorf("decode message error: %s", err)
 			break
 		}
 
-		msgch <- &Message{
-			From:    p.conn.RemoteAddr(),
-			Payload: bytes.NewReader(buf[:n]),
-		}
+		msgch <- msg
+
+		// msgch <- &Message{
+		// 	From:    p.conn.RemoteAddr(),
+		// 	Payload: bytes.NewReader(buf[:n]),
+		// }
 	}
 
 	// TODO(@anthdm): unregister this peer!!!
@@ -71,11 +78,10 @@ func (t *TCPTransport) ListenAndAccept() error {
 		}
 
 		peer := &Peer{
-			conn: conn,
+			conn:     conn,
+			outbound: false,
 		}
 
 		t.AddPeer <- peer
 	}
-
-	return fmt.Errorf("TCP transport stopped reason: ?")
 }
