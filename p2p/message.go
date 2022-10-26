@@ -1,5 +1,7 @@
 package p2p
 
+import "github.com/anthdm/ggpoker/deck"
+
 type Message struct {
 	Payload any
 	From    string
@@ -21,4 +23,8 @@ type Handshake struct {
 
 type MessagePeerList struct {
 	Peers []string
+}
+
+type MessageCards struct {
+	Deck deck.Deck
 }

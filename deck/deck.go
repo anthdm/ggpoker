@@ -31,17 +31,17 @@ const (
 )
 
 type Card struct {
-	suit  Suit
-	value int
+	Suit  Suit
+	Value int
 }
 
 func (c Card) String() string {
-	value := strconv.Itoa(c.value)
-	if c.value == 1 {
+	value := strconv.Itoa(c.Value)
+	if c.Value == 1 {
 		value = "ACE"
 	}
 
-	return fmt.Sprintf("%s of %s %s", value, c.suit, suitToUnicode(c.suit))
+	return fmt.Sprintf("%s of %s %s", value, c.Suit, suitToUnicode(c.Suit))
 }
 
 func NewCard(s Suit, v int) Card {
@@ -50,8 +50,8 @@ func NewCard(s Suit, v int) Card {
 	}
 
 	return Card{
-		suit:  s,
-		value: v,
+		Suit:  s,
+		Value: v,
 	}
 }
 
