@@ -1,10 +1,13 @@
 package p2p
 
-import "github.com/anthdm/ggpoker/deck"
-
 type Message struct {
 	Payload any
 	From    string
+}
+
+type BroadcastTo struct {
+	To      []string
+	Payload any
 }
 
 func NewMessage(from string, payload any) *Message {
@@ -25,6 +28,6 @@ type MessagePeerList struct {
 	Peers []string
 }
 
-type MessageCards struct {
-	Deck deck.Deck
+type MessageEncDeck struct {
+	Deck [][]byte
 }

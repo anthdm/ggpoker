@@ -5,41 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anthdm/ggpoker/deck"
 	"github.com/sirupsen/logrus"
-)
-
-type GameStatus int32
-
-func (g GameStatus) String() string {
-	switch g {
-	case GameStatusWaitingForCards:
-		return "WAITING FOR CARDS"
-	case GameStatusReceivingCards:
-		return "RECEIVING CARDS"
-	case GameStatusDealing:
-		return "DEALING"
-	case GameStatusPreFlop:
-		return "PRE FLP"
-	case GameStatusFlop:
-		return "FLOP"
-	case GameStatusTurn:
-		return "TURN"
-	case GameStatusRiver:
-		return "RIVER"
-	default:
-		return "unknown"
-	}
-}
-
-const (
-	GameStatusWaitingForCards GameStatus = iota
-	GameStatusReceivingCards
-	GameStatusDealing
-	GameStatusPreFlop
-	GameStatusFlop
-	GameStatusTurn
-	GameStatusRiver
 )
 
 type Player struct {
@@ -48,7 +14,7 @@ type Player struct {
 
 type GameState struct {
 	listenAddr  string
-	broadcastch chan any
+	broadcastch chan BroadcastTo
 	isDealer    bool // should be atomic accessable !
 
 	gameStatus GameStatus // should be atomic accessable !
@@ -56,9 +22,12 @@ type GameState struct {
 	playersWaitingForCards int32
 	playersLock            sync.RWMutex
 	players                map[string]*Player
+
+	decksReceivedLock sync.RWMutex
+	deckReceived      map[string]bool
 }
 
-func NewGameState(addr string, broadcastch chan any) *GameState {
+func NewGameState(addr string, broadcastch chan BroadcastTo) *GameState {
 	g := &GameState{
 		listenAddr:  addr,
 		broadcastch: broadcastch,
@@ -74,9 +43,10 @@ func NewGameState(addr string, broadcastch chan any) *GameState {
 
 // TODO:(@anthdm) Check other read and write occurences of the GameStatus!
 func (g *GameState) SetStatus(s GameStatus) {
-	atomic.StoreInt32((*int32)(&g.gameStatus), (int32)(s))
-	// TODO make this an concurent safe operation preferably an atomic one!
-	g.gameStatus = s
+	// Only update the status when the status is different.
+	if g.gameStatus != s {
+		atomic.StoreInt32((*int32)(&g.gameStatus), (int32)(s))
+	}
 }
 
 func (g *GameState) AddPlayerWaitingForCards() {
@@ -94,12 +64,60 @@ func (g *GameState) CheckNeedDealCards() {
 			"addr": g.listenAddr,
 		}).Info("need to deal cards")
 
-		g.DealCards()
+		g.InitiateShuffleAndDeal()
 	}
 }
 
+func (g *GameState) GetPlayersWithStatus(s GameStatus) []string {
+	players := []string{}
+	for addr := range g.players {
+		players = append(players, addr)
+	}
+	return players
+}
+
+func (g *GameState) SetDecksReceived(from string) {
+	g.decksReceivedLock.Lock()
+	g.deckReceived[from] = true
+	g.decksReceivedLock.Unlock()
+}
+
+func (g *GameState) ShuffleAndEncrypt(from string, deck [][]byte) error {
+	g.SetStatus(GameStatusReceivingCards)
+
+	// TODO:(@anthdm)
+	// encryption and shuffle
+
+	g.SendToPlayersWithStatus(MessageEncDeck{Deck: [][]byte{}}, GameStatusReceivingCards)
+
+	return nil
+}
+
+// InitiateShuffleAndDeal is only used for the "real" dealer. The actual "button player"
+func (g *GameState) InitiateShuffleAndDeal() {
+	g.SetStatus(GameStatusReceivingCards)
+	// TODO: Shuffle and deal
+
+	// g.broadcastch <- MessageEncDeck{Deck: [][]byte{}}
+	g.SendToPlayersWithStatus(MessageEncDeck{Deck: [][]byte{}}, GameStatusWaitingForCards)
+}
+
+func (g *GameState) SendToPlayersWithStatus(payload any, s GameStatus) {
+	players := g.GetPlayersWithStatus(s)
+
+	g.broadcastch <- BroadcastTo{
+		To:      players,
+		Payload: payload,
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"payload": payload,
+		"players": players,
+	}).Info("sending to players")
+}
+
 func (g *GameState) DealCards() {
-	g.broadcastch <- MessageCards{Deck: deck.New()}
+	// g.broadcastch <- MessageCards{Deck: deck.New()}
 }
 
 func (g *GameState) SetPlayerStatus(addr string, status GameStatus) {
@@ -146,6 +164,7 @@ func (g *GameState) loop() {
 		select {
 		case <-ticker.C:
 			logrus.WithFields(logrus.Fields{
+				"we":                g.listenAddr,
 				"players connected": g.LenPlayersConnectedWithLock(),
 				"status":            g.gameStatus,
 			}).Info()
