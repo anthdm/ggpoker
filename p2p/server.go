@@ -322,8 +322,9 @@ func (s *Server) handleMessage(msg *Message) error {
 		logrus.WithFields(logrus.Fields{
 			"we":   s.ListenAddr,
 			"from": msg.From,
-		}).Info("recv enc deck")
+		}).Info("recv env deck")
 
+		s.gameState.SetStatus(GameStatusReceivingCards)
 		s.gameState.ShuffleAndEncrypt(msg.From, v.Deck)
 	}
 	return nil

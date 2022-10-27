@@ -24,16 +24,17 @@ type GameState struct {
 	players                map[string]*Player
 
 	decksReceivedLock sync.RWMutex
-	deckReceived      map[string]bool
+	decksReceived     map[string]bool
 }
 
 func NewGameState(addr string, broadcastch chan BroadcastTo) *GameState {
 	g := &GameState{
-		listenAddr:  addr,
-		broadcastch: broadcastch,
-		isDealer:    false,
-		gameStatus:  GameStatusWaitingForCards,
-		players:     make(map[string]*Player),
+		listenAddr:    addr,
+		broadcastch:   broadcastch,
+		isDealer:      false,
+		gameStatus:    GameStatusWaitingForCards,
+		players:       make(map[string]*Player),
+		decksReceived: make(map[string]bool),
 	}
 
 	go g.loop()
@@ -78,15 +79,31 @@ func (g *GameState) GetPlayersWithStatus(s GameStatus) []string {
 
 func (g *GameState) SetDecksReceived(from string) {
 	g.decksReceivedLock.Lock()
-	g.deckReceived[from] = true
+	g.decksReceived[from] = true
 	g.decksReceivedLock.Unlock()
 }
 
 func (g *GameState) ShuffleAndEncrypt(from string, deck [][]byte) error {
-	g.SetStatus(GameStatusReceivingCards)
 
 	// TODO:(@anthdm)
 	// encryption and shuffle
+
+	g.SetDecksReceived(from)
+
+	players := g.GetPlayersWithStatus(GameStatusReceivingCards)
+
+	g.decksReceivedLock.RLock()
+	for _, addr := range players {
+		_, ok := g.decksReceived[addr]
+		if !ok {
+			return nil
+		}
+	}
+	g.decksReceivedLock.RUnlock()
+
+	// in this case we received all the shuffled cards from all players
+
+	g.SetStatus(GameStatusPreFlop)
 
 	g.SendToPlayersWithStatus(MessageEncDeck{Deck: [][]byte{}}, GameStatusReceivingCards)
 
@@ -167,6 +184,7 @@ func (g *GameState) loop() {
 				"we":                g.listenAddr,
 				"players connected": g.LenPlayersConnectedWithLock(),
 				"status":            g.gameStatus,
+				"decksReceived":     g.decksReceived,
 			}).Info()
 
 		default:
