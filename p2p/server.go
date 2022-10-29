@@ -203,9 +203,11 @@ func (s *Server) loop() {
 			}
 
 		case msg := <-s.msgCh:
-			if err := s.handleMessage(msg); err != nil {
-				logrus.Errorf("handle msg error: %s", err)
-			}
+			go func() {
+				if err := s.handleMessage(msg); err != nil {
+					logrus.Errorf("handle msg error: %s", err)
+				}
+			}()
 		}
 	}
 }
@@ -319,15 +321,18 @@ func (s *Server) handleMessage(msg *Message) error {
 	case MessagePeerList:
 		return s.handlePeerList(v)
 	case MessageEncDeck:
-		logrus.WithFields(logrus.Fields{
-			"we":   s.ListenAddr,
-			"from": msg.From,
-		}).Info("recv env deck")
-
-		s.gameState.SetStatus(GameStatusReceivingCards)
-		s.gameState.ShuffleAndEncrypt(msg.From, v.Deck)
+		return s.handleEncDeck(msg.From, v)
 	}
 	return nil
+}
+
+func (s *Server) handleEncDeck(from string, msg MessageEncDeck) error {
+	logrus.WithFields(logrus.Fields{
+		"we":   s.ListenAddr,
+		"from": from,
+	}).Info("recv env deck")
+
+	return s.gameState.ShuffleAndEncrypt(from, msg.Deck)
 }
 
 // TODO FIXME: (@anthdm) maybe goroutine??

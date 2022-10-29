@@ -9,7 +9,8 @@ import (
 )
 
 type Player struct {
-	Status GameStatus
+	Status     GameStatus
+	ListenAddr string
 }
 
 type GameState struct {
@@ -21,6 +22,7 @@ type GameState struct {
 
 	playersWaitingForCards int32
 	playersLock            sync.RWMutex
+	playersList            []*Player
 	players                map[string]*Player
 
 	decksReceivedLock sync.RWMutex
@@ -71,8 +73,10 @@ func (g *GameState) CheckNeedDealCards() {
 
 func (g *GameState) GetPlayersWithStatus(s GameStatus) []string {
 	players := []string{}
-	for addr := range g.players {
-		players = append(players, addr)
+	for addr, player := range g.players {
+		if player.Status == s {
+			players = append(players, addr)
+		}
 	}
 	return players
 }
@@ -84,39 +88,41 @@ func (g *GameState) SetDecksReceived(from string) {
 }
 
 func (g *GameState) ShuffleAndEncrypt(from string, deck [][]byte) error {
+	dealToPlayer := g.playersList[0]
 
-	// TODO:(@anthdm)
-	// encryption and shuffle
+	logrus.WithFields(logrus.Fields{
+		"recvFromPlayer":  from,
+		"we":              g.listenAddr,
+		"dealingToPlayer": dealToPlayer,
+	}).Info("received cards and going to shuffle")
 
-	g.SetDecksReceived(from)
+	// TODO:(@anthdm) encryption and shuffle
+	// TODO: get this player out of a deterministic (sorted) list.
 
-	players := g.GetPlayersWithStatus(GameStatusReceivingCards)
-
-	g.decksReceivedLock.RLock()
-	for _, addr := range players {
-		_, ok := g.decksReceived[addr]
-		if !ok {
-			return nil
-		}
-	}
-	g.decksReceivedLock.RUnlock()
-
-	// in this case we received all the shuffled cards from all players
-
-	g.SetStatus(GameStatusPreFlop)
-
-	g.SendToPlayersWithStatus(MessageEncDeck{Deck: [][]byte{}}, GameStatusReceivingCards)
+	g.SendToPlayer(dealToPlayer.ListenAddr, MessageEncDeck{Deck: [][]byte{}})
+	g.SetStatus(GameStatusShuffleAndDeal)
 
 	return nil
 }
 
 // InitiateShuffleAndDeal is only used for the "real" dealer. The actual "button player"
 func (g *GameState) InitiateShuffleAndDeal() {
-	g.SetStatus(GameStatusReceivingCards)
-	// TODO: Shuffle and deal
+	dealToPlayer := g.playersList[0]
 
-	// g.broadcastch <- MessageEncDeck{Deck: [][]byte{}}
-	g.SendToPlayersWithStatus(MessageEncDeck{Deck: [][]byte{}}, GameStatusWaitingForCards)
+	g.SendToPlayer(dealToPlayer.ListenAddr, MessageEncDeck{Deck: [][]byte{}})
+	g.SetStatus(GameStatusShuffleAndDeal)
+}
+
+func (g *GameState) SendToPlayer(addr string, payload any) {
+	g.broadcastch <- BroadcastTo{
+		To:      []string{addr},
+		Payload: payload,
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"payload": payload,
+		"player":  addr,
+	}).Info("sending payload to player")
 }
 
 func (g *GameState) SendToPlayersWithStatus(payload any, s GameStatus) {
@@ -163,7 +169,11 @@ func (g *GameState) AddPlayer(addr string, status GameStatus) {
 		g.AddPlayerWaitingForCards()
 	}
 
-	g.players[addr] = new(Player)
+	player := &Player{
+		ListenAddr: addr,
+	}
+	g.players[addr] = player
+	g.playersList = append(g.playersList, player)
 
 	// Set the player status also when we add the player!
 	g.SetPlayerStatus(addr, status)
