@@ -30,9 +30,10 @@ const (
 )
 
 type ServerConfig struct {
-	Version     string
-	ListenAddr  string
-	GameVariant GameVariant
+	Version       string
+	ListenAddr    string
+	APIListenAddr string
+	GameVariant   GameVariant
 }
 
 type Server struct {
@@ -46,7 +47,8 @@ type Server struct {
 	msgCh       chan *Message
 	broadcastch chan BroadcastTo
 
-	gameState *GameState
+	// gameState *GameState
+	gameState *Game
 }
 
 func NewServer(cfg ServerConfig) *Server {
@@ -58,17 +60,29 @@ func NewServer(cfg ServerConfig) *Server {
 		msgCh:        make(chan *Message, 100),
 		broadcastch:  make(chan BroadcastTo, 100),
 	}
-	s.gameState = NewGameState(s.ListenAddr, s.broadcastch)
+	// s.gameState = NewGameState(s.ListenAddr, s.broadcastch)
+	s.gameState = NewGame(s.ListenAddr, s.broadcastch)
 
-	if s.ListenAddr == ":3000" {
-		s.gameState.isDealer = true // just for testing!
-	}
+	// if s.ListenAddr == ":3000" {
+	// 	s.gameState.isDealer = true // just for testing!
+	// }
 
 	tr := NewTCPTransport(s.ListenAddr)
 	s.transport = tr
 
 	tr.AddPeer = s.addPeer
 	tr.DelPeer = s.addPeer
+
+	go func(s *Server) {
+		apiServer := NewAPIServer(cfg.APIListenAddr, s.gameState)
+
+		logrus.WithFields(logrus.Fields{
+			"listenAddr": cfg.APIListenAddr,
+		}).Info("starting API server")
+
+		apiServer.Run()
+
+	}(s)
 
 	return s
 }
@@ -134,7 +148,7 @@ func (s *Server) SendHandshake(p *Peer) error {
 	hs := &Handshake{
 		GameVariant: s.GameVariant,
 		Version:     s.Version,
-		GameStatus:  s.gameState.gameStatus,
+		GameStatus:  s.gameState.currentStatus,
 		ListenAddr:  s.ListenAddr,
 	}
 
@@ -249,7 +263,7 @@ func (s *Server) handleNewPeer(peer *Peer) error {
 	}).Info("handshake successfull: new player connected")
 
 	s.AddPeer(peer)
-	s.gameState.AddPlayer(peer.listenAddr, hs.GameStatus)
+	s.gameState.AddPlayer(peer.listenAddr)
 
 	return nil
 }
@@ -316,7 +330,8 @@ func (s *Server) handleEncDeck(from string, msg MessageEncDeck) error {
 		"from": from,
 	}).Info("recv env deck")
 
-	return s.gameState.ShuffleAndEncrypt(from, msg.Deck)
+	// return s.gameState.ShuffleAndEncrypt(from, msg.Deck)
+	return nil
 }
 
 // TODO FIXME: (@anthdm) maybe goroutine??
@@ -339,4 +354,5 @@ func (s *Server) handlePeerList(l MessagePeerList) error {
 func init() {
 	gob.Register(MessagePeerList{})
 	gob.Register(MessageEncDeck{})
+	gob.Register(MessageReady{})
 }

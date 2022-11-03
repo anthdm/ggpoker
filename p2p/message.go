@@ -31,3 +31,9 @@ type MessagePeerList struct {
 type MessageEncDeck struct {
 	Deck [][]byte
 }
+
+type MessageReady struct{}
+
+func (msg MessageReady) String() string {
+	return "MSG: READY"
+}
