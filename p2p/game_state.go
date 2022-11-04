@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"sync"
@@ -19,6 +20,15 @@ func NewPlayersReady() *PlayersReady {
 	return &PlayersReady{
 		recvStatutes: make(map[string]bool),
 	}
+}
+
+func (pr *PlayersReady) haveRecv(from string) bool {
+	pr.mu.RLock()
+	defer pr.mu.RUnlock()
+
+	_, ok := pr.recvStatutes[from]
+
+	return ok
 }
 
 func (pr *PlayersReady) addRecvStatus(from string) {
@@ -48,9 +58,13 @@ type Game struct {
 
 	// currentStatus should be atomically accessable.
 	currentStatus GameStatus
+	// currentDealer should be atomically accessable.
+	// NOTE: this will be -1 when the game is in a bootstrapped state.
+	currentDealer int32
 
 	playersReady *PlayersReady
-	playersList  PlayersList
+
+	playersList PlayersList
 }
 
 func NewGame(addr string, bc chan BroadcastTo) *Game {
@@ -60,7 +74,10 @@ func NewGame(addr string, bc chan BroadcastTo) *Game {
 		currentStatus: GameStatusConnected,
 		playersReady:  NewPlayersReady(),
 		playersList:   PlayersList{},
+		currentDealer: -1,
 	}
+
+	g.playersList = append(g.playersList, addr)
 
 	go g.loop()
 
@@ -72,6 +89,77 @@ func (g *Game) setStatus(s GameStatus) {
 	if g.currentStatus != s {
 		atomic.StoreInt32((*int32)(&g.currentStatus), (int32)(s))
 	}
+}
+
+func (g *Game) getCurrentDealerAddr() (string, bool) {
+	currentDealer := g.playersList[0] // currentDealer == -1
+	if g.currentDealer > -1 {
+		currentDealer = g.playersList[g.currentDealer]
+	}
+	return currentDealer, g.listenAddr == currentDealer
+}
+
+func (g *Game) SetPlayerReady(from string) {
+	logrus.WithFields(logrus.Fields{
+		"we":     g.listenAddr,
+		"player": from,
+	}).Info("setting player status to ready")
+
+	g.playersReady.addRecvStatus(from)
+
+	// If we don't have enough players the round cannot be started.
+	if g.playersReady.len() < 2 {
+		return
+	}
+
+	// In the case we have enough players. hence, the round can be started.
+	// FIXME:(@anthdm)
+	// g.playersReady.clear()
+
+	// we need to check if we are the dealer of the current round.
+	if _, ok := g.getCurrentDealerAddr(); ok {
+		g.InitiateShuffleAndDeal()
+	}
+}
+
+func (g *Game) ShuffleAndEncrypt(from string, deck [][]byte) error {
+	prevPlayerAddr := g.playersList[g.getPrevPositionOnTable()]
+	if from != prevPlayerAddr {
+		return fmt.Errorf("received encrypted deck from the wrong player (%s) should be (%s)", from, prevPlayerAddr)
+	}
+
+	_, isDealer := g.getCurrentDealerAddr()
+	if isDealer && from == prevPlayerAddr {
+		logrus.Info("shuffle round complete")
+		return nil
+	}
+
+	dealToPlayer := g.playersList[g.getNextPositionOnTable()]
+
+	logrus.WithFields(logrus.Fields{
+		"recvFromPlayer":  from,
+		"we":              g.listenAddr,
+		"dealingToPlayer": dealToPlayer,
+	}).Info("received cards and going to shuffle")
+
+	// TODO:(@anthdm) encryption and shuffle
+	// TODO: get this player out of a deterministic (sorted) list.
+
+	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayer)
+	g.setStatus(GameStatusDealing)
+
+	return nil
+}
+
+func (g *Game) InitiateShuffleAndDeal() {
+	dealToPlayerAddr := g.playersList[g.getNextPositionOnTable()]
+	g.setStatus(GameStatusDealing)
+	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayerAddr)
+
+	logrus.WithFields(logrus.Fields{
+		"we": g.listenAddr,
+		"to": dealToPlayerAddr,
+	}).Info("dealing cards")
 }
 
 func (g *Game) SetReady() {
@@ -89,6 +177,7 @@ func (g *Game) sendToPlayers(payload any, addr ...string) {
 	logrus.WithFields(logrus.Fields{
 		"payload": payload,
 		"player":  addr,
+		"we":      g.listenAddr,
 	}).Info("sending payload to player")
 }
 
@@ -97,7 +186,6 @@ func (g *Game) AddPlayer(from string) {
 	// that he is ready to play.
 	g.playersList = append(g.playersList, from)
 	sort.Sort(g.playersList)
-	g.playersReady.addRecvStatus(from)
 }
 
 func (g *Game) loop() {
@@ -105,10 +193,14 @@ func (g *Game) loop() {
 
 	for {
 		<-ticker.C
+
+		currentDealerAddr, _ := g.getCurrentDealerAddr()
 		logrus.WithFields(logrus.Fields{
-			"we":      g.listenAddr,
-			"players": g.playersList,
-			"status":  g.currentStatus,
+			"we":            g.listenAddr,
+			"players":       g.playersList,
+			"status":        g.currentStatus,
+			"currentDealer": currentDealerAddr,
+			// "playersReady": g.playersReady.recvStatutes,
 		}).Info()
 	}
 }
@@ -124,6 +216,53 @@ func (g *Game) getOtherPlayers() []string {
 	}
 
 	return players
+}
+
+// getPositionOnTable return the index of our own position on the table.
+func (g *Game) getPositionOnTable() int {
+	for i := 0; i < len(g.playersList); i++ {
+		if g.playersList[i] == g.listenAddr {
+			return i
+		}
+	}
+
+	panic("player does not exist in the playersList; that should not happen!!!")
+}
+
+func (g *Game) getPrevPositionOnTable() int {
+	ourPosition := g.getPositionOnTable()
+
+	// if we are the in the first position on the table we need to return the last
+	// index of the PlayersList.
+	if ourPosition == 0 {
+		return len(g.playersList) - 1
+	}
+
+	return ourPosition - 1
+}
+
+// getNextPositionOnTable returns the index of the next player in the PlayersList.
+func (g *Game) getNextPositionOnTable() int {
+	ourPosition := g.getPositionOnTable()
+
+	// check if we are on the last position of the table, if so return first index 0.
+	if ourPosition == len(g.playersList)-1 {
+		return 0
+	}
+
+	return ourPosition + 1
+}
+
+func (g *Game) getNextReadyPlayer(pos int) string {
+	nextPos := g.getNextPositionOnTable()
+	nextPlayerAddr := g.playersList[nextPos]
+
+	// fmt.Printf("%+v\n", )
+
+	if g.playersReady.haveRecv(nextPlayerAddr) {
+		return nextPlayerAddr
+	}
+	return g.getNextReadyPlayer(nextPos + 1)
 }
 
 // type GameState struct {
@@ -198,72 +337,9 @@ func (g *Game) getOtherPlayers() []string {
 // 	return players
 // }
 
-// // getPositionOnTable return the index of our own position on the table.
-// func (g *GameState) getPositionOnTable() int {
-// 	for i := 0; i < len(g.playersList); i++ {
-// 		if g.playersList[i].ListenAddr == g.listenAddr {
-// 			return i
-// 		}
-// 	}
-
-// 	panic("player does not exist in the playersList; that should not happen!!!")
-// }
-
-// func (g *GameState) getPrevPositionOnTable() int {
-// 	ourPosition := g.getPositionOnTable()
-
-// 	// if we are the in the first position on the table we need to return the last
-// 	// index of the PlayersList.
-// 	if ourPosition == 0 {
-// 		return len(g.playersList) - 1
-// 	}
-
-// 	return ourPosition - 1
-// }
-
-// // getNextPositionOnTable returns the index of the next player in the PlayersList.
-// func (g *GameState) getNextPositionOnTable() int {
-// 	ourPosition := g.getPositionOnTable()
-
-// 	// check if we are on the last position of the table, if so return first index 0.
-// 	if ourPosition == len(g.playersList)-1 {
-// 		return 0
-// 	}
-
-// 	return ourPosition + 1
-// }
-
-// func (g *GameState) ShuffleAndEncrypt(from string, deck [][]byte) error {
-// 	g.SetPlayerStatus(from, GameStatusShuffleAndDeal)
-
-// 	prevPlayer := g.playersList[g.getPrevPositionOnTable()]
-// 	if g.isDealer && from == prevPlayer.ListenAddr {
-// 		logrus.Info("shuffle round complete")
-// 		return nil
-// 	}
-
-// 	dealToPlayer := g.playersList[g.getNextPositionOnTable()]
-
-// 	logrus.WithFields(logrus.Fields{
-// 		"recvFromPlayer":  from,
-// 		"we":              g.listenAddr,
-// 		"dealingToPlayer": dealToPlayer,
-// 	}).Info("received cards and going to shuffle")
-
-// 	// TODO:(@anthdm) encryption and shuffle
-// 	// TODO: get this player out of a deterministic (sorted) list.
-
-// 	g.SendToPlayer(dealToPlayer.ListenAddr, MessageEncDeck{Deck: [][]byte{}})
-// 	g.SetStatus(GameStatusShuffleAndDeal)
-
-// 	fmt.Printf("%s => setting my own status to %s\n", g.listenAddr, GameStatusShuffleAndDeal)
-
-// 	return nil
-// }
-
 // // InitiateShuffleAndDeal is only used for the "real" dealer. The actual "button player"
-// func (g *GameState) InitiateShuffleAndDeal() {
-// 	dealToPlayer := g.playersList[g.getNextPositionOnTable()]
+// func (g *GameState) InitiateShuffleAndDeal() { //
+//dealToPlayer := g.playersList[g.getNextPositionOnTable()]
 
 // 	g.SetStatus(GameStatusShuffleAndDeal)
 // 	g.SendToPlayer(dealToPlayer.ListenAddr, MessageEncDeck{Deck: [][]byte{}})

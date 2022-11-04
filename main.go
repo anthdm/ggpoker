@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/anthdm/ggpoker/p2p"
@@ -26,16 +27,23 @@ func main() {
 	playerB := makeServerAndStart(":4000", ":4001")
 	playerC := makeServerAndStart(":5000", ":5001")
 	playerD := makeServerAndStart(":7000", ":7001")
-	//playerE := makeServerAndStart(":8000")
+
+	go func() {
+		time.Sleep(time.Second * 3)
+		http.Get("http://localhost:3001/ready")
+
+		time.Sleep(time.Second * 3)
+		http.Get("http://localhost:4001/ready")
+	}()
 
 	time.Sleep(time.Millisecond * 200)
 	playerB.Connect(playerA.ListenAddr)
+
 	time.Sleep(time.Millisecond)
 	playerC.Connect(playerB.ListenAddr)
+
 	time.Sleep(time.Millisecond * 200)
 	playerD.Connect(playerC.ListenAddr)
-	// time.Sleep(time.Millisecond * 200)
-	// playerF.Connect(playerE.ListenAddr)
 
 	select {}
 }
