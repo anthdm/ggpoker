@@ -10,6 +10,8 @@ func (g GameStatus) String() string {
 		return "PLAYER READY"
 	case GameStatusDealing:
 		return "DEALING"
+	case GameStatusFolded:
+		return "FOLDED"
 	case GameStatusPreFlop:
 		return "PRE FLOP"
 	case GameStatusFlop:
@@ -27,6 +29,7 @@ const (
 	GameStatusConnected GameStatus = iota
 	GameStatusPlayerReady
 	GameStatusDealing
+	GameStatusFolded
 	GameStatusPreFlop
 	GameStatusFlop
 	GameStatusTurn

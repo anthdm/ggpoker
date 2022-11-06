@@ -24,6 +24,22 @@ type Handshake struct {
 	ListenAddr  string
 }
 
+type MessagePlayerAction struct {
+	// CurrentGameStatus is the current status of the sending player his game.
+	// this needs to the exact same as ours.
+	CurrentGameStatus GameStatus
+	// Action is the action that the player is willin to take.
+	Action PlayerAction
+	// The value of the bet if any
+	Value int
+}
+
+type MessagePreFlop struct{}
+
+func (msg MessagePreFlop) String() string {
+	return "MSG: PREFLOP"
+}
+
 type MessagePeerList struct {
 	Peers []string
 }
