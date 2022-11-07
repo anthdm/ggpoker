@@ -337,7 +337,7 @@ func (s *Server) handleGetMsgPlayerAction(from string, msg MessagePlayerAction) 
 		"action": msg,
 	}).Info("received player action")
 
-	return nil
+	return s.gameState.handlePlayerAction(from, msg)
 }
 
 func (s *Server) handleMsgPreFlop(from string) error {

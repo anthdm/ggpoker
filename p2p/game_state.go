@@ -19,6 +19,24 @@ const (
 	PlayerActionBet                           // 3
 )
 
+type PlayerActionsRecv struct {
+	mu          sync.RWMutex
+	recvActions map[string]MessagePlayerAction
+}
+
+func NewPlayerActionsRevc() *PlayerActionsRecv {
+	return &PlayerActionsRecv{
+		recvActions: make(map[string]MessagePlayerAction),
+	}
+}
+
+func (pa *PlayerActionsRecv) addAction(from string, action MessagePlayerAction) {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+
+	pa.recvActions[from] = action
+}
+
 // TODO: (@anthdm) Maybe use playersList instead??
 type PlayersReady struct {
 	mu           sync.RWMutex
@@ -64,19 +82,21 @@ type Game struct {
 	// currentPlayerTurn should be atomically accessable.
 	currentPlayerTurn int32
 
-	playersReady *PlayersReady
+	playersReady      *PlayersReady
+	recvPlayerActions *PlayerActionsRecv
 
 	playersList PlayersList
 }
 
 func NewGame(addr string, bc chan BroadcastTo) *Game {
 	g := &Game{
-		listenAddr:    addr,
-		broadcastch:   bc,
-		currentStatus: GameStatusConnected,
-		playersReady:  NewPlayersReady(),
-		playersList:   PlayersList{},
-		currentDealer: -1,
+		listenAddr:        addr,
+		broadcastch:       bc,
+		currentStatus:     GameStatusConnected,
+		playersReady:      NewPlayersReady(),
+		playersList:       PlayersList{},
+		currentDealer:     0,
+		recvPlayerActions: NewPlayerActionsRevc(),
 	}
 
 	g.playersList = append(g.playersList, addr)
@@ -86,8 +106,42 @@ func NewGame(addr string, bc chan BroadcastTo) *Game {
 	return g
 }
 
+func (g *Game) setCurrentPlayerTurn(index int32) {
+	atomic.StoreInt32(&g.currentPlayerTurn, index)
+}
+
+func (g *Game) canTakeAction(from string) bool {
+	currentPlayerAddr := g.playersList[g.currentPlayerTurn]
+
+	return currentPlayerAddr == from
+}
+
+func (g *Game) handlePlayerAction(from string, action MessagePlayerAction) error {
+	if !g.canTakeAction(from) {
+		return fmt.Errorf("player (%s) taking action before his turn", from)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"we":   g.listenAddr,
+		"from": from,
+	}).Info("recv player action")
+
+	g.recvPlayerActions.addAction(from, action)
+
+	// TODO: (@anthdm) This function should be handle the logic of picking the next player
+	// internally. Cause maybe the next player in the list in not the next index, hence not
+	// g.currentPlayerTurn + 1, due to the fact that his status can be just "connected"
+	g.setCurrentPlayerTurn(g.currentPlayerTurn + 1)
+
+	return nil
+}
+
 func (g *Game) Fold() {
 	g.SetStatus(GameStatusFolded)
+
+	// TODO:(@anthdm) Make a wrapper function that can be used for each PlayerAction
+	// (fold, check, ...)
+	g.setCurrentPlayerTurn(g.currentPlayerTurn + 1)
 
 	action := MessagePlayerAction{
 		Action:            PlayerActionFold,
@@ -102,6 +156,10 @@ func (g *Game) SetStatus(s GameStatus) {
 }
 
 func (g *Game) setStatus(s GameStatus) {
+	if s == GameStatusPreFlop {
+		g.setCurrentPlayerTurn(g.currentDealer + 1)
+	}
+
 	// Only update the status when the status is different.
 	if g.currentStatus != s {
 		atomic.StoreInt32((*int32)(&g.currentStatus), (int32)(s))
@@ -109,11 +167,9 @@ func (g *Game) setStatus(s GameStatus) {
 }
 
 func (g *Game) getCurrentDealerAddr() (string, bool) {
-	currentDealer := g.playersList[0] // currentDealer == -1
-	if g.currentDealer > -1 {
-		currentDealer = g.playersList[g.currentDealer]
-	}
-	return currentDealer, g.listenAddr == currentDealer
+	currentDealerAddr := g.playersList[g.currentDealer]
+
+	return currentDealerAddr, g.listenAddr == currentDealerAddr
 }
 
 func (g *Game) SetPlayerReady(from string) {
@@ -214,10 +270,11 @@ func (g *Game) loop() {
 
 		currentDealerAddr, _ := g.getCurrentDealerAddr()
 		logrus.WithFields(logrus.Fields{
-			"we":            g.listenAddr,
-			"players":       g.playersList,
-			"status":        g.currentStatus,
-			"currentDealer": currentDealerAddr,
+			"we":             g.listenAddr,
+			"players":        g.playersList,
+			"status":         g.currentStatus,
+			"currentDealer":  currentDealerAddr,
+			"nextPlayerTurn": g.currentPlayerTurn,
 			// "playersReady": g.playersReady.recvStatutes,
 		}).Info()
 	}
