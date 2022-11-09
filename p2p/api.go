@@ -2,7 +2,9 @@ package p2p
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 )
@@ -47,16 +49,37 @@ func (s *APIServer) Run() {
 
 	r.HandleFunc("/ready", makeHTTPHandleFunc(s.handlePlayerReady))
 	r.HandleFunc("/fold", makeHTTPHandleFunc(s.handlePlayerFold))
+	r.HandleFunc("/check", makeHTTPHandleFunc(s.handlePlayerCheck))
+	r.HandleFunc("/bet/{value}", makeHTTPHandleFunc(s.handlePlayerBet))
 
 	http.ListenAndServe(s.listenAddr, r)
 }
 
+func (s *APIServer) handlePlayerBet(w http.ResponseWriter, r *http.Request) error {
+	valueStr := mux.Vars(r)["value"]
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return err
+	}
+
+	return JSON(w, http.StatusOK, fmt.Sprintf("value:%d", value))
+}
+
+func (s *APIServer) handlePlayerCheck(w http.ResponseWriter, r *http.Request) error {
+	if err := s.game.TakeAction(PlayerActionCheck, 0); err != nil {
+		return err
+	}
+	return JSON(w, http.StatusOK, "CHECKED")
+}
+
 func (s *APIServer) handlePlayerFold(w http.ResponseWriter, r *http.Request) error {
-	s.game.Fold()
-	return JSON(w, http.StatusOK, []byte("FOLDED"))
+	if err := s.game.TakeAction(PlayerActionFold, 0); err != nil {
+		return err
+	}
+	return JSON(w, http.StatusOK, "FOLDED")
 }
 
 func (s *APIServer) handlePlayerReady(w http.ResponseWriter, r *http.Request) error {
 	s.game.SetReady()
-	return JSON(w, http.StatusOK, []byte("READY"))
+	return JSON(w, http.StatusOK, "READY")
 }

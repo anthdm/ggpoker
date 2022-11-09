@@ -148,7 +148,7 @@ func (s *Server) SendHandshake(p *Peer) error {
 	hs := &Handshake{
 		GameVariant: s.GameVariant,
 		Version:     s.Version,
-		GameStatus:  s.gameState.currentStatus,
+		GameStatus:  GameStatus(s.gameState.currentStatus.Get()),
 		ListenAddr:  s.ListenAddr,
 	}
 
