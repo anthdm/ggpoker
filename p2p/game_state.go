@@ -130,9 +130,26 @@ func NewGame(addr string, bc chan BroadcastTo) *Game {
 	return g
 }
 
-func (g *Game) canTakeAction(from string) bool {
-	currentPlayerAddr := g.playersList[g.currentPlayerTurn.Get()]
+func (g *Game) getNextGameStatus() GameStatus {
+	switch GameStatus(g.currentStatus.Get()) {
+	case GameStatusPreFlop:
+		return GameStatusFlop
+	case GameStatusFlop:
+		return GameStatusTurn
+	case GameStatusTurn:
+		return GameStatusRiver
+	default:
+		panic("invalid game status")
+	}
+}
 
+func (g *Game) canTakeAction(from string) bool {
+	// currentPlayerAddr := g.playersList[g.currentPlayerTurn.Get()]
+	fmt.Printf("next pos on table => %d\n", g.getNextPositionOnTable())
+	fmt.Printf("next player turn => %d\n", g.currentPlayerTurn.Get())
+	fmt.Printf("my pos on the table => %d\n", g.getPositionOnTable())
+
+	currentPlayerAddr := g.playersList[g.currentPlayerTurn.Get()]
 	return currentPlayerAddr == from
 }
 
@@ -140,18 +157,28 @@ func (g *Game) handlePlayerAction(from string, action MessagePlayerAction) error
 	if !g.canTakeAction(from) {
 		return fmt.Errorf("player (%s) taking action before his turn", from)
 	}
+	if action.CurrentGameStatus != GameStatus(g.currentStatus.Get()) {
+		return fmt.Errorf("player (%s) has not the correct game status (%s)", from, action.CurrentGameStatus)
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"we":   g.listenAddr,
 		"from": from,
 	}).Info("recv player action")
 
+	// Every player in this case will need to set the current game status to the next one (next round).
+	if g.playersList[g.currentDealer.Get()] == from {
+		g.currentStatus.Set(int32(g.getNextGameStatus()))
+	}
+
 	g.recvPlayerActions.addAction(from, action)
 
-	// TODO: (@anthdm) This function should be handle the logic of picking the next player
+	// TODO:(@anthdm)
+	// This still not fixed!
+	// This function should be handle the logic of picking the next player
 	// internally. Cause maybe the next player in the list in not the next index, hence not
 	// g.currentPlayerTurn + 1, due to the fact that his status can be just "connected"
-	g.currentPlayerTurn.Inc()
+	g.incNextPlayer()
 
 	return nil
 }
@@ -169,7 +196,12 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 	// 	//
 	// }
 
-	g.currentPlayerTurn.Inc()
+	g.incNextPlayer()
+
+	// If we are the dealer that just took an action, we can go to the next round.
+	if g.listenAddr == g.playersList[g.currentDealer.Get()] {
+		g.currentStatus.Set(int32(g.getNextGameStatus()))
+	}
 
 	a := MessagePlayerAction{
 		Action:            action,
@@ -181,13 +213,22 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 	return nil
 }
 
+func (g *Game) incNextPlayer() {
+	if len(g.playersList)-1 == int(g.currentPlayerTurn.Get()) {
+		g.currentPlayerTurn.Set(0)
+		return
+	}
+
+	g.currentPlayerTurn.Inc()
+}
+
 func (g *Game) SetStatus(s GameStatus) {
 	g.setStatus(s)
 }
 
 func (g *Game) setStatus(s GameStatus) {
 	if s == GameStatusPreFlop {
-		g.currentPlayerTurn.Inc()
+		g.incNextPlayer()
 	}
 
 	// Only update the status when the status is different.

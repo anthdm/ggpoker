@@ -11,7 +11,7 @@ func (pa PlayerAction) String() string {
 	case PlayerActionBet:
 		return "BET"
 	default:
-		return "INVALID ACTION"
+		return "IDLE"
 	}
 }
 

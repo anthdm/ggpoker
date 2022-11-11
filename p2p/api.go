@@ -62,6 +62,10 @@ func (s *APIServer) handlePlayerBet(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 
+	if err := s.game.TakeAction(PlayerActionBet, value); err != nil {
+		return err
+	}
+
 	return JSON(w, http.StatusOK, fmt.Sprintf("value:%d", value))
 }
 
