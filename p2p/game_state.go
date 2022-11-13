@@ -56,6 +56,13 @@ func (pa *PlayerActionsRecv) addAction(from string, action MessagePlayerAction) 
 	pa.recvActions[from] = action
 }
 
+func (pa *PlayerActionsRecv) clear() {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+
+	pa.recvActions = map[string]MessagePlayerAction{}
+}
+
 // TODO: (@anthdm) Maybe use playersList instead??
 type PlayersReady struct {
 	mu           sync.RWMutex
@@ -144,34 +151,34 @@ func (g *Game) getNextGameStatus() GameStatus {
 }
 
 func (g *Game) canTakeAction(from string) bool {
-	// currentPlayerAddr := g.playersList[g.currentPlayerTurn.Get()]
-	fmt.Printf("next pos on table => %d\n", g.getNextPositionOnTable())
-	fmt.Printf("next player turn => %d\n", g.currentPlayerTurn.Get())
-	fmt.Printf("my pos on the table => %d\n", g.getPositionOnTable())
-
 	currentPlayerAddr := g.playersList[g.currentPlayerTurn.Get()]
 	return currentPlayerAddr == from
+}
+
+func (g *Game) isFromCurrentDealer(from string) bool {
+	return g.playersList[g.currentDealer.Get()] == from
 }
 
 func (g *Game) handlePlayerAction(from string, action MessagePlayerAction) error {
 	if !g.canTakeAction(from) {
 		return fmt.Errorf("player (%s) taking action before his turn", from)
 	}
-	if action.CurrentGameStatus != GameStatus(g.currentStatus.Get()) {
+
+	// If we receive a message from a peer that doenst have the same game status
+	// as ours, but is not the current dealer we return an error. Cannot proceed.
+	if action.CurrentGameStatus != GameStatus(g.currentStatus.Get()) && !g.isFromCurrentDealer(from) {
 		return fmt.Errorf("player (%s) has not the correct game status (%s)", from, action.CurrentGameStatus)
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"we":   g.listenAddr,
-		"from": from,
-	}).Info("recv player action")
+	g.recvPlayerActions.addAction(from, action)
 
 	// Every player in this case will need to set the current game status to the next one (next round).
+	// NEXT
+	// 1. set the next player action to IDLE
+	// 2. set the next current game status
 	if g.playersList[g.currentDealer.Get()] == from {
-		g.currentStatus.Set(int32(g.getNextGameStatus()))
+		g.advanceToNexRound()
 	}
-
-	g.recvPlayerActions.addAction(from, action)
 
 	// TODO:(@anthdm)
 	// This still not fixed!
@@ -179,6 +186,12 @@ func (g *Game) handlePlayerAction(from string, action MessagePlayerAction) error
 	// internally. Cause maybe the next player in the list in not the next index, hence not
 	// g.currentPlayerTurn + 1, due to the fact that his status can be just "connected"
 	g.incNextPlayer()
+
+	logrus.WithFields(logrus.Fields{
+		"we":     g.listenAddr,
+		"from":   from,
+		"action": action,
+	}).Info("recv player action")
 
 	return nil
 }
@@ -200,7 +213,8 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 
 	// If we are the dealer that just took an action, we can go to the next round.
 	if g.listenAddr == g.playersList[g.currentDealer.Get()] {
-		g.currentStatus.Set(int32(g.getNextGameStatus()))
+		// NEXT
+		g.advanceToNexRound()
 	}
 
 	a := MessagePlayerAction{
@@ -211,6 +225,13 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 	g.sendToPlayers(a, g.getOtherPlayers()...)
 
 	return nil
+}
+
+func (g *Game) advanceToNexRound() {
+	/// g.currentDealer.Set()
+	g.recvPlayerActions.clear()
+	g.currentPlayerAction.Set(int32(PlayerActionIdle))
+	g.currentStatus.Set(int32(g.getNextGameStatus()))
 }
 
 func (g *Game) incNextPlayer() {
@@ -244,21 +265,12 @@ func (g *Game) getCurrentDealerAddr() (string, bool) {
 }
 
 func (g *Game) SetPlayerReady(from string) {
-	logrus.WithFields(logrus.Fields{
-		"we":     g.listenAddr,
-		"player": from,
-	}).Info("setting player status to ready")
-
 	g.playersReady.addRecvStatus(from)
 
 	// If we don't have enough players the round cannot be started.
 	if g.playersReady.len() < 2 {
 		return
 	}
-
-	// In the case we have enough players. hence, the round can be started.
-	// FIXME:(@anthdm)
-	// g.playersReady.clear()
 
 	// we need to check if we are the dealer of the current round.
 	if _, ok := g.getCurrentDealerAddr(); ok {
@@ -272,6 +284,8 @@ func (g *Game) ShuffleAndEncrypt(from string, deck [][]byte) error {
 		return fmt.Errorf("received encrypted deck from the wrong player (%s) should be (%s)", from, prevPlayerAddr)
 	}
 
+	// If we are the dealer and we received a message from the previous player on the table
+	// we advance to the next round.
 	_, isDealer := g.getCurrentDealerAddr()
 	if isDealer && from == prevPlayerAddr {
 		g.setStatus(GameStatusPreFlop)
@@ -297,6 +311,13 @@ func (g *Game) ShuffleAndEncrypt(from string, deck [][]byte) error {
 }
 
 func (g *Game) InitiateShuffleAndDeal() {
+	fmt.Println("==================================================================")
+	fmt.Println("==================================================================")
+	fmt.Println("==================================================================")
+	fmt.Println(g.listenAddr)
+	fmt.Println("==================================================================")
+	fmt.Println("==================================================================")
+	fmt.Println("==================================================================")
 	dealToPlayerAddr := g.playersList[g.getNextPositionOnTable()]
 	g.setStatus(GameStatusDealing)
 	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayerAddr)
@@ -318,12 +339,6 @@ func (g *Game) sendToPlayers(payload any, addr ...string) {
 		To:      addr,
 		Payload: payload,
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"payload": payload,
-		"player":  addr,
-		"we":      g.listenAddr,
-	}).Info("sending payload to player")
 }
 
 func (g *Game) AddPlayer(from string) {
@@ -386,6 +401,10 @@ func (g *Game) getPrevPositionOnTable() int {
 	}
 
 	return ourPosition - 1
+}
+
+func (g *Game) getNextDealer() int {
+	panic("TODO")
 }
 
 // getNextPositionOnTable returns the index of the next player in the PlayersList.
