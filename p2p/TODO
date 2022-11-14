@@ -1,5 +1,4 @@
-- Make sure we only deal to the players that have the ready status (grep TODO)
+- implement getNextDealer 
 - Fix possible data race condition where multiple of the same addresses are in the playersList
 - Just came accros this error:
   ERRO[0006] handle msg error: received encrypted deck from the wrong player (:7000) should be (:4000)
-- The current playersList is not protected for any kind of concurrent reads and writes.

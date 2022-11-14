@@ -41,8 +41,13 @@ func main() {
 		// time.Sleep(time.Second * 2)
 		// http.Get("http://localhost:7001/ready")
 
-		time.Sleep(time.Second * 5)
+		// time.Sleep(time.Second * 2)
+		// http.Get("http://localhost:5001/ready")
 
+		// time.Sleep(time.Second * 2)
+		// http.Get("http://localhost:7001/ready")
+
+		time.Sleep(time.Second * 5)
 		http.Get("http://localhost:4001/fold")
 
 		// time.Sleep(time.Second * 2)
