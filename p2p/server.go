@@ -205,7 +205,7 @@ func (s *Server) loop() {
 		select {
 		case msg := <-s.broadcastch:
 			if err := s.Broadcast(msg); err != nil {
-				logrus.Errorf("broadcast error: ", err)
+				logrus.Errorf("broadcast error: %s", err)
 			}
 
 		case peer := <-s.delPeer:
@@ -376,7 +376,7 @@ func (s *Server) handlePeerList(l MessagePeerList) error {
 
 	for i := 0; i < len(l.Peers); i++ {
 		if err := s.Connect(l.Peers[i]); err != nil {
-			logrus.Errorf("failed to dial peer: ", err)
+			logrus.Errorf("failed to dial peer: %s", err)
 			continue
 		}
 	}
