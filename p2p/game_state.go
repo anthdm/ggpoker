@@ -11,43 +11,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Table struct {
-	lock  sync.RWMutex
-	seats map[int]string
-
-	maxSeats int
-}
-
-func NewTable(maxSeats int) *Table {
-	return &Table{
-		seats:    make(map[int]string),
-		maxSeats: maxSeats,
-	}
-}
-
-func (t *Table) AddPlayer(addr string) error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	if len(t.seats) == t.maxSeats {
-		return fmt.Errorf("player table is full")
-	}
-
-	t.seats[t.getNextFreeSeat()] = addr
-
-	return nil
-}
-
-func (t *Table) getNextFreeSeat() int {
-	for i := 0; i < t.maxSeats; i++ {
-		if _, ok := t.seats[i]; !ok {
-			return i
-		}
-	}
-
-	panic("no free seat is available!!")
-}
-
 type PlayersList struct {
 	lock sync.RWMutex
 	list []string
@@ -219,6 +182,8 @@ type Game struct {
 
 	// playersReadyList is the list of active players participating in the round
 	playersReadyList *PlayersList
+
+	table *Table
 }
 
 func NewGame(addr string, bc chan BroadcastTo) *Game {
@@ -233,6 +198,7 @@ func NewGame(addr string, bc chan BroadcastTo) *Game {
 		currentDealer:       NewAtomicInt(0),
 		recvPlayerActions:   NewPlayerActionsRevc(),
 		currentPlayerTurn:   NewAtomicInt(0),
+		table:               NewTable(6),
 	}
 
 	g.playersList.add(addr)
@@ -335,7 +301,7 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 func (g *Game) advanceToNexRound() {
 	/// g.currentDealer.Set()
 	g.recvPlayerActions.clear()
-	g.currentPlayerAction.Set(int32(PlayerActionIdle))
+	g.currentPlayerAction.Set(int32(PlayerActionNone))
 	g.currentStatus.Set(int32(g.getNextGameStatus()))
 }
 
