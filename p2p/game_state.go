@@ -44,6 +44,18 @@ func (p *PlayersList) add(addr string) {
 	sort.Sort(p)
 }
 
+func (p *PlayersList) getIndex(addr string) int {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	for i := 0; i < len(p.list); i++ {
+		if addr == p.list[i] {
+			return i
+		}
+	}
+	return -1
+}
+
 func (p *PlayersList) get(index any) string {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -67,7 +79,7 @@ func (p *PlayersList) Len() int { return len(p.list) }
 func (p *PlayersList) Swap(i, j int) {
 	p.list[i], p.list[j] = p.list[j], p.list[i]
 }
-func (p PlayersList) Less(i, j int) bool {
+func (p *PlayersList) Less(i, j int) bool {
 	portI, _ := strconv.Atoi(p.list[i][1:])
 	portJ, _ := strconv.Atoi(p.list[j][1:])
 
@@ -180,9 +192,6 @@ type Game struct {
 	// playersList is the list of connected players to the network
 	playersList *PlayersList
 
-	// playersReadyList is the list of active players participating in the round
-	playersReadyList *PlayersList
-
 	table *Table
 }
 
@@ -192,7 +201,6 @@ func NewGame(addr string, bc chan BroadcastTo) *Game {
 		broadcastch:         bc,
 		currentStatus:       NewAtomicInt(int32(GameStatusConnected)),
 		playersReady:        NewPlayersReady(),
-		playersReadyList:    NewPlayersList(),
 		playersList:         NewPlayersList(),
 		currentPlayerAction: NewAtomicInt(0),
 		currentDealer:       NewAtomicInt(0),
@@ -316,6 +324,7 @@ func (g *Game) incNextPlayer() {
 
 func (g *Game) SetStatus(s GameStatus) {
 	g.setStatus(s)
+	g.table.SetPlayerStatus(g.listenAddr, s)
 }
 
 func (g *Game) setStatus(s GameStatus) {
@@ -336,32 +345,38 @@ func (g *Game) getCurrentDealerAddr() (string, bool) {
 }
 
 func (g *Game) ShuffleAndEncrypt(from string, deck [][]byte) error {
-	prevPlayerAddr := g.playersList.get(g.getPrevPositionOnTable())
-	if from != prevPlayerAddr {
-		return fmt.Errorf("received encrypted deck from the wrong player (%s) should be (%s)", from, prevPlayerAddr)
+	prevPlayer, err := g.table.GetPlayerBefore(g.listenAddr)
+	if err != nil {
+		panic(err)
+	}
+	if from != prevPlayer.addr {
+		return fmt.Errorf("received encrypted deck from the wrong player (%s) should be (%s)", from, prevPlayer.addr)
 	}
 
 	// If we are the dealer and we received a message from the previous player on the table
 	// we advance to the next round.
 	_, isDealer := g.getCurrentDealerAddr()
-	if isDealer && from == prevPlayerAddr {
+	if isDealer && from == prevPlayer.addr {
 		g.setStatus(GameStatusPreFlop)
+		g.table.SetPlayerStatus(g.listenAddr, GameStatusPreFlop)
 		g.sendToPlayers(MessagePreFlop{}, g.getOtherPlayers()...)
 		return nil
 	}
 
-	dealToPlayer := g.playersList.get(g.getNextPositionOnTable())
+	// dealToPlayer := g.playersList.get(g.getNextPositionOnTable())
+	dealToPlayer, err := g.table.GetPlayerAfter(g.listenAddr)
+	if err != nil {
+		panic(err)
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"recvFromPlayer":  from,
 		"we":              g.listenAddr,
-		"dealingToPlayer": dealToPlayer,
+		"dealingToPlayer": dealToPlayer.addr,
 	}).Info("received cards and going to shuffle")
 
 	// TODO:(@anthdm) encryption and shuffle
-	// TODO: get this player out of a deterministic (sorted) list.
-
-	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayer)
+	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayer.addr)
 	g.setStatus(GameStatusDealing)
 
 	return nil
@@ -369,32 +384,40 @@ func (g *Game) ShuffleAndEncrypt(from string, deck [][]byte) error {
 
 func (g *Game) InitiateShuffleAndDeal() {
 	fmt.Println("==================================================================")
-	fmt.Println("==================================================================")
 	fmt.Println(g.listenAddr)
 	fmt.Println("==================================================================")
-	fmt.Println("==================================================================")
 
-	dealToPlayerAddr := g.playersList.get(g.getNextPositionOnTable())
+	// dealToPlayerAddr := g.playersList.get(g.getNextPositionOnTable())
+	dealToPlayer, err := g.table.GetPlayerAfter(g.listenAddr)
+	if err != nil {
+		panic(err)
+	}
+
 	g.setStatus(GameStatusDealing)
-	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayerAddr)
+	g.sendToPlayers(MessageEncDeck{Deck: [][]byte{}}, dealToPlayer.addr)
 
 	logrus.WithFields(logrus.Fields{
 		"we": g.listenAddr,
-		"to": dealToPlayerAddr,
+		"to": dealToPlayer.addr,
 	}).Info("dealing cards")
 }
 
 // SetPlayerReady is getting called when we receive a ready message
 // from a player in the network.
-func (g *Game) SetPlayerReady(from string) {
-	g.playersReady.addRecvStatus(from)
-	g.playersReadyList.add(from)
+func (g *Game) SetPlayerReady(addr string) {
+	tablePos := g.playersList.getIndex(addr)
+	g.table.AddPlayerOnPosition(addr, tablePos)
+
+	// TODO: (@anthdm) check if we really need this??
+	g.playersReady.addRecvStatus(addr)
 
 	// TODO(@anthdm): This potentially going to cause an issue!
 	// If we don't have enough players the round cannot be started.
-	if g.playersReady.len() < 2 {
+	if g.table.LenPlayers() < 2 {
 		return
 	}
+
+	time.Sleep(time.Second * 14)
 
 	// we need to check if we are the dealer of the current round.
 	if _, ok := g.getCurrentDealerAddr(); ok {
@@ -404,7 +427,9 @@ func (g *Game) SetPlayerReady(from string) {
 
 // SetReady is being called when we set ourselfs as ready.
 func (g *Game) SetReady() {
-	g.playersReadyList.add(g.listenAddr)
+	tablePos := g.playersList.getIndex(g.listenAddr)
+	g.table.AddPlayerOnPosition(g.listenAddr, tablePos)
+
 	g.playersReady.addRecvStatus(g.listenAddr)
 	g.sendToPlayers(MessageReady{}, g.getOtherPlayers()...)
 	g.setStatus(GameStatusPlayerReady)
@@ -432,16 +457,28 @@ func (g *Game) loop() {
 
 		currentDealerAddr, _ := g.getCurrentDealerAddr()
 		logrus.WithFields(logrus.Fields{
-			"we":                  g.listenAddr,
-			"playersReady":        g.playersReadyList.List(),
-			"gameStatus":          GameStatus(g.currentStatus.Get()),
-			"currentDealer":       currentDealerAddr,
-			"nextPlayerTurn":      g.currentPlayerTurn,
-			"playerActions":       g.recvPlayerActions.recvActions,
-			"currentPlayerAction": PlayerAction(g.currentPlayerAction.Get()),
+			"we":             g.listenAddr,
+			"playersList":    g.playersList.List(),
+			"gameState":      GameStatus(g.currentStatus.Get()),
+			"currentDealer":  currentDealerAddr,
+			"nextPlayerTurn": g.currentPlayerTurn,
 		}).Info()
+
+		logrus.WithFields(logrus.Fields{
+			"table": g.table,
+		}).Info()
+
 	}
 }
+
+// func (g *Game) getOtherPlayers() []string {
+// 	players := g.table.Players()
+// 	addrs := make([]string, len(players))
+// 	for i := 0; i < len(players); i++ {
+// 		addrs[i] = players[i].addr
+// 	}
+// 	return addrs
+// }
 
 func (g *Game) getOtherPlayers() []string {
 	players := []string{}
@@ -467,30 +504,30 @@ func (g *Game) getPositionOnTable() int {
 	panic("player does not exist in the playersList; that should not happen!!!")
 }
 
-func (g *Game) getPrevPositionOnTable() int {
-	ourPosition := g.getPositionOnTable()
+// func (g *Game) getPrevPositionOnTable() int {
+// 	ourPosition := g.getPositionOnTable()
 
-	// if we are the in the first position on the table we need to return the last
-	// index of the PlayersList.
-	if ourPosition == 0 {
-		return g.playersList.len() - 1
-	}
+// 	// if we are the in the first position on the table we need to return the last
+// 	// index of the PlayersList.
+// 	if ourPosition == 0 {
+// 		return g.playersList.len() - 1
+// 	}
 
-	return ourPosition - 1
-}
+// 	return ourPosition - 1
+// }
 
 func (g *Game) getNextDealer() int {
 	panic("TODO")
 }
 
 // getNextPositionOnTable returns the index of the next player in the PlayersList.
-func (g *Game) getNextPositionOnTable() int {
-	ourPosition := g.getPositionOnTable()
+// func (g *Game) getNextPositionOnTable() int {
+// 	ourPosition := g.getPositionOnTable()
 
-	// check if we are on the last position of the table, if so return first index 0.
-	if ourPosition == g.playersList.len()-1 {
-		return 0
-	}
+// 	// check if we are on the last position of the table, if so return first index 0.
+// 	if ourPosition == g.playersList.len()-1 {
+// 		return 0
+// 	}
 
-	return ourPosition + 1
-}
+// 	return ourPosition + 1
+// }

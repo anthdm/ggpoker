@@ -25,8 +25,8 @@ func makeServerAndStart(addr, apiAddr string) *p2p.Server {
 func main() {
 	playerA := makeServerAndStart(":3000", ":3001") // dealer
 	playerB := makeServerAndStart(":4000", ":4001") // sb
-	// playerC := makeServerAndStart(":5000", ":5001") // bb
-	// playerD := makeServerAndStart(":7000", ":7001") // bb + 2
+	playerC := makeServerAndStart(":5000", ":5001") // bb
+	playerD := makeServerAndStart(":7000", ":7001") // bb + 2
 
 	go func() {
 		time.Sleep(time.Second * 2)
@@ -35,20 +35,20 @@ func main() {
 		time.Sleep(time.Second * 2)
 		http.Get("http://localhost:4001/ready")
 
-		// time.Sleep(time.Second * 2)
-		// http.Get("http://localhost:5001/ready")
+		time.Sleep(time.Second * 2)
+		http.Get("http://localhost:5001/ready")
 
-		// time.Sleep(time.Second * 2)
-		// http.Get("http://localhost:7001/ready")
+		time.Sleep(time.Second * 2)
+		http.Get("http://localhost:7001/ready")
 
-		// time.Sleep(time.Second * 2)
-		// http.Get("http://localhost:5001/ready")
+		time.Sleep(time.Second * 2)
+		http.Get("http://localhost:5001/ready")
 
-		// time.Sleep(time.Second * 2)
-		// http.Get("http://localhost:7001/ready")
+		time.Sleep(time.Second * 2)
+		http.Get("http://localhost:7001/ready")
 
-		time.Sleep(time.Second * 5)
-		http.Get("http://localhost:4001/fold")
+		// time.Sleep(time.Second * 5)
+		// http.Get("http://localhost:4001/fold")
 
 		// time.Sleep(time.Second * 2)
 		// http.Get("http://localhost:5001/fold")
@@ -56,19 +56,19 @@ func main() {
 		// time.Sleep(time.Second * 2)
 		// http.Get("http://localhost:7001/fold")
 
-		time.Sleep(time.Second * 2)
-		http.Get("http://localhost:3001/fold")
+		// time.Sleep(time.Second * 2)
+		// http.Get("http://localhost:3001/fold")
 
 	}()
 
 	time.Sleep(time.Millisecond * 200)
 	playerB.Connect(playerA.ListenAddr)
 
-	// time.Sleep(time.Millisecond)
-	// playerC.Connect(playerB.ListenAddr)
+	time.Sleep(time.Millisecond)
+	playerC.Connect(playerB.ListenAddr)
 
-	// time.Sleep(time.Millisecond * 200)
-	// playerD.Connect(playerC.ListenAddr)
+	time.Sleep(time.Millisecond * 200)
+	playerD.Connect(playerC.ListenAddr)
 
 	select {}
 }
