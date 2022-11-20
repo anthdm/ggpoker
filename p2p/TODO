@@ -5,3 +5,5 @@
 
 - Find a way to set the status of the other players in the table. All the statutes are
   working fine, but only ours is set in our local version of the players table.
+
+- when we are in the next round, the nextPlayer value is inconsistent!

@@ -216,19 +216,6 @@ func NewGame(addr string, bc chan BroadcastTo) *Game {
 	return g
 }
 
-func (g *Game) getNextGameStatus() GameStatus {
-	switch GameStatus(g.currentStatus.Get()) {
-	case GameStatusPreFlop:
-		return GameStatusFlop
-	case GameStatusFlop:
-		return GameStatusTurn
-	case GameStatusTurn:
-		return GameStatusRiver
-	default:
-		panic("invalid game status")
-	}
-}
-
 func (g *Game) canTakeAction(from string) bool {
 	currentPlayerAddr := g.playersList.get(g.currentPlayerTurn.Get())
 	return currentPlayerAddr == from
@@ -281,12 +268,6 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 	}
 
 	g.currentPlayerAction.Set((int32)(action))
-	// if action == PlayerActionFold {
-	// 	//
-	// }
-	// if action == PlayerActionCheck {
-	// 	//
-	// }
 
 	g.incNextPlayer()
 
@@ -306,10 +287,31 @@ func (g *Game) TakeAction(action PlayerAction, value int) error {
 	return nil
 }
 
+func (g *Game) getNextGameStatus() GameStatus {
+	status := GameStatus(g.currentStatus.Get())
+	switch status {
+	case GameStatusPreFlop:
+		return GameStatusFlop
+	case GameStatusFlop:
+		return GameStatusTurn
+	case GameStatusTurn:
+		return GameStatusRiver
+	case GameStatusRiver:
+		return GameStatusPlayerReady
+	default:
+		fmt.Printf("invalid status => %+v\n", status)
+		panic("invalid game status")
+	}
+}
+
 func (g *Game) advanceToNexRound() {
-	/// g.currentDealer.Set()
 	g.recvPlayerActions.clear()
 	g.currentPlayerAction.Set(int32(PlayerActionNone))
+
+	if GameStatus(g.currentStatus.Get()) == GameStatusRiver {
+		g.SetReady()
+		return
+	}
 	g.currentStatus.Set(int32(g.getNextGameStatus()))
 }
 

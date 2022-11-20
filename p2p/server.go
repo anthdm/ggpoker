@@ -339,12 +339,6 @@ func (s *Server) handleMessage(msg *Message) error {
 }
 
 func (s *Server) handleGetMsgPlayerAction(from string, msg MessagePlayerAction) error {
-	logrus.WithFields(logrus.Fields{
-		"we":     s.ListenAddr,
-		"from":   from,
-		"action": msg,
-	}).Info("received player action")
-
 	return s.gameState.handlePlayerAction(from, msg)
 }
 
