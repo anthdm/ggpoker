@@ -402,6 +402,12 @@ func (g *Game) InitiateShuffleAndDeal() {
 	}).Info("dealing cards")
 }
 
+func (g *Game) maybeDeal() {
+	if GameStatus(g.currentStatus.Get()) == GameStatusPlayerReady {
+		g.InitiateShuffleAndDeal()
+	}
+}
+
 // SetPlayerReady is getting called when we receive a ready message
 // from a player in the network.
 func (g *Game) SetPlayerReady(addr string) {
@@ -417,11 +423,14 @@ func (g *Game) SetPlayerReady(addr string) {
 		return
 	}
 
-	time.Sleep(time.Second * 14)
-
 	// we need to check if we are the dealer of the current round.
-	if _, ok := g.getCurrentDealerAddr(); ok {
-		g.InitiateShuffleAndDeal()
+	if _, areWeDealer := g.getCurrentDealerAddr(); areWeDealer {
+		go func() {
+			// if the game can start we will wait another
+			// N amount of seconds to actually start dealing
+			time.Sleep(5 * time.Second)
+			g.maybeDeal()
+		}()
 	}
 }
 
@@ -463,22 +472,8 @@ func (g *Game) loop() {
 			"currentDealer":  currentDealerAddr,
 			"nextPlayerTurn": g.currentPlayerTurn,
 		}).Info()
-
-		logrus.WithFields(logrus.Fields{
-			"table": g.table,
-		}).Info()
-
 	}
 }
-
-// func (g *Game) getOtherPlayers() []string {
-// 	players := g.table.Players()
-// 	addrs := make([]string, len(players))
-// 	for i := 0; i < len(players); i++ {
-// 		addrs[i] = players[i].addr
-// 	}
-// 	return addrs
-// }
 
 func (g *Game) getOtherPlayers() []string {
 	players := []string{}
