@@ -34,10 +34,10 @@ func JSON(w http.ResponseWriter, status int, v any) error {
 
 type APIServer struct {
 	listenAddr string
-	game       *Game
+	game       *GameState
 }
 
-func NewAPIServer(listenAddr string, game *Game) *APIServer {
+func NewAPIServer(listenAddr string, game *GameState) *APIServer {
 	return &APIServer{
 		game:       game,
 		listenAddr: listenAddr,

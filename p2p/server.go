@@ -51,7 +51,7 @@ type Server struct {
 	broadcastch chan BroadcastTo
 
 	// gameState *GameState
-	gameState *Game
+	gameState *GameState
 }
 
 func NewServer(cfg ServerConfig) *Server {
@@ -235,7 +235,7 @@ func (s *Server) loop() {
 }
 
 func (s *Server) handleNewPeer(peer *Peer) error {
-	hs, err := s.handshake(peer)
+	_, err := s.handshake(peer)
 	if err != nil {
 		peer.conn.Close()
 		delete(s.peers, peer.conn.RemoteAddr().String())
@@ -263,9 +263,6 @@ func (s *Server) handleNewPeer(peer *Peer) error {
 
 	logrus.WithFields(logrus.Fields{
 		"peer":       peer.conn.RemoteAddr(),
-		"version":    hs.Version,
-		"variant":    hs.GameVariant,
-		"gameStatus": hs.GameStatus,
 		"listenAddr": peer.listenAddr,
 		"we":         s.ListenAddr,
 	}).Info("handshake successfull: new player connected")
