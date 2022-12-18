@@ -7,7 +7,10 @@
 package proto
 
 import (
+	context "context"
 	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -15,51 +18,88 @@ import (
 // Requires gRPC-Go v1.32.0 or later.
 const _ = grpc.SupportPackageIsVersion7
 
-// GossipServerClient is the client API for GossipServer service.
+// GossipClient is the client API for Gossip service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type GossipServerClient interface {
+type GossipClient interface {
+	Handshake(ctx context.Context, in *Version, opts ...grpc.CallOption) (*Version, error)
 }
 
-type gossipServerClient struct {
+type gossipClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewGossipServerClient(cc grpc.ClientConnInterface) GossipServerClient {
-	return &gossipServerClient{cc}
+func NewGossipClient(cc grpc.ClientConnInterface) GossipClient {
+	return &gossipClient{cc}
 }
 
-// GossipServerServer is the server API for GossipServer service.
-// All implementations must embed UnimplementedGossipServerServer
+func (c *gossipClient) Handshake(ctx context.Context, in *Version, opts ...grpc.CallOption) (*Version, error) {
+	out := new(Version)
+	err := c.cc.Invoke(ctx, "/Gossip/Handshake", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GossipServer is the server API for Gossip service.
+// All implementations must embed UnimplementedGossipServer
 // for forward compatibility
-type GossipServerServer interface {
-	mustEmbedUnimplementedGossipServerServer()
+type GossipServer interface {
+	Handshake(context.Context, *Version) (*Version, error)
+	mustEmbedUnimplementedGossipServer()
 }
 
-// UnimplementedGossipServerServer must be embedded to have forward compatible implementations.
-type UnimplementedGossipServerServer struct {
+// UnimplementedGossipServer must be embedded to have forward compatible implementations.
+type UnimplementedGossipServer struct {
 }
 
-func (UnimplementedGossipServerServer) mustEmbedUnimplementedGossipServerServer() {}
+func (UnimplementedGossipServer) Handshake(context.Context, *Version) (*Version, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Handshake not implemented")
+}
+func (UnimplementedGossipServer) mustEmbedUnimplementedGossipServer() {}
 
-// UnsafeGossipServerServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to GossipServerServer will
+// UnsafeGossipServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to GossipServer will
 // result in compilation errors.
-type UnsafeGossipServerServer interface {
-	mustEmbedUnimplementedGossipServerServer()
+type UnsafeGossipServer interface {
+	mustEmbedUnimplementedGossipServer()
 }
 
-func RegisterGossipServerServer(s grpc.ServiceRegistrar, srv GossipServerServer) {
-	s.RegisterService(&GossipServer_ServiceDesc, srv)
+func RegisterGossipServer(s grpc.ServiceRegistrar, srv GossipServer) {
+	s.RegisterService(&Gossip_ServiceDesc, srv)
 }
 
-// GossipServer_ServiceDesc is the grpc.ServiceDesc for GossipServer service.
+func _Gossip_Handshake_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Version)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GossipServer).Handshake(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Gossip/Handshake",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GossipServer).Handshake(ctx, req.(*Version))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Gossip_ServiceDesc is the grpc.ServiceDesc for Gossip service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var GossipServer_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "GossipServer",
-	HandlerType: (*GossipServerServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "proto/service.proto",
+var Gossip_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "Gossip",
+	HandlerType: (*GossipServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Handshake",
+			Handler:    _Gossip_Handshake_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/service.proto",
 }

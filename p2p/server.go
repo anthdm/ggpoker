@@ -54,6 +54,7 @@ type Server struct {
 	gameState *GameState
 }
 
+// Need to be replaced
 func NewServer(cfg ServerConfig) *Server {
 	if cfg.MaxPlayers == 0 {
 		cfg.MaxPlayers = defaultMaxPlayers
