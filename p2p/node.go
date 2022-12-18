@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 
@@ -46,16 +47,57 @@ func (n *Node) addPeer(c proto.GossipClient, v *proto.Version) {
 		"we":     n.ListenAddr,
 		"remote": v.ListenAddr,
 	}).Info("new player connected")
+
+	go func() {
+		for _, addr := range v.PeerList {
+			if err := n.Connect(addr); err != nil {
+				fmt.Println("failed to connect: ", err)
+				continue
+			}
+		}
+	}()
 }
 
 func (n *Node) getVersion() *proto.Version {
 	return &proto.Version{
 		Version:    "GGPOKER-0.0.1",
 		ListenAddr: n.ListenAddr,
+		PeerList:   n.getPeerList(),
 	}
 }
 
+func (n *Node) getPeerList() []string {
+	n.peerLock.RLock()
+	defer n.peerLock.RUnlock()
+
+	var (
+		peers = make([]string, len(n.peers))
+		i     = 0
+	)
+	for _, v := range n.peers {
+		peers[i] = v.ListenAddr
+		i++
+	}
+
+	return peers
+}
+
+func (n *Node) canConnectWith(addr string) bool {
+	if addr == n.ListenAddr {
+		return false
+	}
+	for _, v := range n.peers {
+		if v.ListenAddr == addr {
+			return false
+		}
+	}
+	return true
+}
+
 func (n *Node) Connect(addr string) error {
+	if !n.canConnectWith(addr) {
+		return nil
+	}
 	client, err := makeGrpcClientConn(addr)
 	if err != nil {
 		return err
