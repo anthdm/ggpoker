@@ -4,7 +4,11 @@ option go_package = "github.com/anthdm/ggpoker/proto";
 
 service Gossip {
 	rpc Handshake(Version) returns (Version);
+	rpc HandleEncDeck(EncDeck) returns (Ack);
+	rpc HandleTakeSeat(TakeSeat) returns (Ack);
 } 
+
+message Ack {}
 
 message Version {
 	string version = 1;
@@ -13,6 +17,15 @@ message Version {
 	string listenAddr = 4;
 	repeated string peerList = 5;
 }
+
+message EncDeck {
+	repeated bytes deck = 1;
+} 
+
+message TakeSeat {
+	string addr = 1;
+}
+
 
 
 

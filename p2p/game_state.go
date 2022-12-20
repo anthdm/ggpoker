@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/anthdm/ggpoker/proto"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,7 +29,7 @@ type GameState struct {
 	table *Table
 }
 
-func NewGame(addr string, bc chan BroadcastTo) *GameState {
+func NewGameState(addr string, bc chan BroadcastTo) *GameState {
 	g := &GameState{
 		listenAddr:          addr,
 		broadcastch:         bc,
@@ -138,7 +139,7 @@ func (g *GameState) advanceToNexRound() {
 	g.currentPlayerAction.Set(int32(PlayerActionNone))
 
 	if GameStatus(g.currentStatus.Get()) == GameStatusRiver {
-		g.SetReady()
+		g.TakeSeatAtTable()
 		return
 	}
 	g.currentStatus.Set(int32(g.getNextGameStatus()))
@@ -241,14 +242,16 @@ func (g *GameState) InitiateShuffleAndDeal() {
 }
 
 func (g *GameState) maybeDeal() {
+	return
 	if GameStatus(g.currentStatus.Get()) == GameStatusPlayerReady {
 		g.InitiateShuffleAndDeal()
 	}
 }
 
-// SetPlayerReady is getting called when we receive a ready message
+// takeSeatAtTable is getting called when we receive a ready message
 // from a player in the network taking a seat on the table.
-func (g *GameState) SetPlayerReady(addr string) {
+func (g *GameState) SetPlayerAtTable(addr string) {
+	fmt.Println("setting player on table:", addr)
 	tablePos := g.playersList.getIndex(addr)
 	g.table.AddPlayerOnPosition(addr, tablePos)
 
@@ -269,12 +272,14 @@ func (g *GameState) SetPlayerReady(addr string) {
 	}
 }
 
-// SetReady is being called when we set ourselfs as ready.
-func (g *GameState) SetReady() {
+// TakeSeatAtTable is being called when we set ourselfs as ready.
+func (g *GameState) TakeSeatAtTable() {
 	tablePos := g.playersList.getIndex(g.listenAddr)
 	g.table.AddPlayerOnPosition(g.listenAddr, tablePos)
 
-	g.sendToPlayers(MessageReady{}, g.getOtherPlayers()...)
+	g.sendToPlayers(&proto.TakeSeat{
+		Addr: g.listenAddr,
+	}, g.getOtherPlayers()...)
 	g.setStatus(GameStatusPlayerReady)
 }
 
@@ -306,6 +311,12 @@ func (g *GameState) loop() {
 			"cd":  currentDealerAddr,
 			"npt": g.currentPlayerTurn,
 		}).Info()
+
+		logrus.WithFields(logrus.Fields{
+			"we":    g.listenAddr,
+			"table": g.table,
+		}).Info()
+
 	}
 }
 

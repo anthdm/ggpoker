@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/anthdm/ggpoker/p2p"
@@ -30,6 +31,15 @@ func main() {
 	node2.Connect(node1.ListenAddr)
 	node3.Connect(node2.ListenAddr)
 	node4.Connect(node3.ListenAddr)
+
+	go func() {
+		time.Sleep(2 * time.Second)
+		http.Get("http://localhost:3001/takeseat")
+		// time.Sleep(2 * time.Second)
+		// http.Get("http://localhost:4001/takeseat")
+		// time.Sleep(2 * time.Second)
+		// http.Get("http://localhost:5001/takeseat")
+	}()
 
 	select {}
 	return
