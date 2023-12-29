@@ -12,8 +12,8 @@ func (s Suit) String() string {
 	switch s {
 	case Spades:
 		return "SPADES"
-	case Harts:
-		return "HARTS"
+	case Hearts:
+		return "HEARTS"
 	case Diamonds:
 		return "DIAMONDS"
 	case Clubs:
@@ -25,7 +25,7 @@ func (s Suit) String() string {
 
 const (
 	Spades   Suit = iota // 0
-	Harts                // 1
+	Hearts                // 1
 	Diamonds             // 2
 	Clubs                // 3
 )
@@ -46,7 +46,7 @@ func (c Card) String() string {
 
 func NewCard(s Suit, v int) Card {
 	if v > 13 {
-		panic("the value of the card cannot be higher then 13")
+		panic("the value of the card cannot be higher than 13")
 	}
 
 	return Card{
@@ -91,7 +91,7 @@ func suitToUnicode(s Suit) string {
 	switch s {
 	case Spades:
 		return "♠"
-	case Harts:
+	case Hearts:
 		return "♥"
 	case Diamonds:
 		return "♦"
