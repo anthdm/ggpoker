@@ -2,13 +2,18 @@ package deck
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/gob"
+	"errors"
+	"io"
 )
 
 func DecryptCard(key, encCard []byte) (Card, error) {
 	card := Card{}
 
-	b, err := Encrypt(key, encCard)
+	b, err := Decrypt(key, encCard)
 	if err != nil {
 		return card, err
 	}
@@ -31,10 +36,37 @@ func EncryptCard(key []byte, card Card) ([]byte, error) {
 }
 
 func Encrypt(key, payload []byte) ([]byte, error) {
-	encOutput := make([]byte, len(payload))
-	for i := 0; i < len(payload); i++ {
-		encOutput[i] = payload[i] ^ key[i%len(key)]
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
 	}
 
-	return encOutput, nil
+	ciphertext := make([]byte, aes.BlockSize+len(payload))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, err
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], payload)
+
+	return ciphertext, nil
+}
+
+func Decrypt(key, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < aes.BlockSize {
+		return nil, errors.New("ciphertext too short")
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	stream.XORKeyStream(ciphertext, ciphertext)
+
+	return ciphertext, nil
 }

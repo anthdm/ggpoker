@@ -6,7 +6,7 @@ import (
 )
 
 func TestEncryptCard(t *testing.T) {
-	key := []byte("foobarbazfoobarbazfoobarbazfoobarbaz")
+	key := []byte("AES - Encryption")
 	card := Card{
 		Suit:  Spades,
 		Value: 1,
