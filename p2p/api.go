@@ -9,6 +9,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
+const (
+	RouteReady = "/ready"
+	RouteFold  = "/fold"
+	RouteCheck = "/check"
+	RouteBet   = "/bet/{value}"
+)
+
 type MyError struct {
 	err error
 }
@@ -47,10 +54,10 @@ func NewAPIServer(listenAddr string, game *GameState) *APIServer {
 func (s *APIServer) Run() {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/ready", makeHTTPHandleFunc(s.handlePlayerReady))
-	r.HandleFunc("/fold", makeHTTPHandleFunc(s.handlePlayerFold))
-	r.HandleFunc("/check", makeHTTPHandleFunc(s.handlePlayerCheck))
-	r.HandleFunc("/bet/{value}", makeHTTPHandleFunc(s.handlePlayerBet))
+	r.HandleFunc(RouteReady, makeHTTPHandleFunc(s.handlePlayerReady))
+	r.HandleFunc(RouteFold, makeHTTPHandleFunc(s.handlePlayerFold))
+	r.HandleFunc(RouteCheck, makeHTTPHandleFunc(s.handlePlayerCheck))
+	r.HandleFunc(RouteBet, makeHTTPHandleFunc(s.handlePlayerBet))
 
 	http.ListenAndServe(s.listenAddr, r)
 }
@@ -59,11 +66,11 @@ func (s *APIServer) handlePlayerBet(w http.ResponseWriter, r *http.Request) erro
 	valueStr := mux.Vars(r)["value"]
 	value, err := strconv.Atoi(valueStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("error converting value to int: %w", err)
 	}
 
 	if err := s.game.TakeAction(PlayerActionBet, value); err != nil {
-		return err
+		return fmt.Errorf("error taking bet action: %w", err)
 	}
 
 	return JSON(w, http.StatusOK, fmt.Sprintf("value:%d", value))
