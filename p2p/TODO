@@ -1,4 +1,3 @@
-- implement getNextDealer
 - Fix possible data race condition where multiple of the same addresses are in the playersList
 - Just came accros this error:
   ERRO[0006] handle msg error: received encrypted deck from the wrong player (:7000) should be (:4000)

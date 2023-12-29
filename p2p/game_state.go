@@ -334,5 +334,11 @@ func (g *GameState) getPositionOnTable() int {
 }
 
 func (g *GameState) getNextDealer() int {
-	panic("TODO")
+	currentDealer := g.currentDealer.Get()
+	if currentDealer == int32(g.playersList.len()-1) {
+		// If the current dealer is the last player, the next dealer is the first player
+		return 0
+	}
+	// Otherwise, the next dealer is the next player in the list
+	return int(currentDealer + 1)
 }
