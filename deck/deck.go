@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"time"
 )
 
 type Suit int
@@ -75,10 +76,12 @@ func New() Deck {
 	return shuffle(d)
 }
 
+// Fisher-Yates algorithm for shuffling a deck
 func shuffle(d Deck) Deck {
-	for i := 0; i < len(d); i++ {
-		r := rand.Intn(i + 1)
-
+	src := rand.NewSource(time.Now().UnixNano())
+	random := rand.New(src)
+	for i := len(d) - 1; i > 0; i-- {
+		r := random.Intn(i + 1)
 		if r != i {
 			d[i], d[r] = d[r], d[i]
 		}
