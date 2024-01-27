@@ -178,7 +178,7 @@ func (s *Server) isInPeerList(addr string) bool {
 	return false
 }
 
-// TODO(@anthdm): Right now we have some redundent code in registering new peers to the game network.
+// TODO(@anthdm): Right now we have some redundant code in registering new peers to the game network.
 // maybe construct a new peer and handshake protocol after registering a plain connection?
 func (s *Server) Connect(addr string) error {
 	if s.isInPeerList(addr) {
@@ -265,7 +265,7 @@ func (s *Server) handleNewPeer(peer *Peer) error {
 		"peer":       peer.conn.RemoteAddr(),
 		"listenAddr": peer.listenAddr,
 		"we":         s.ListenAddr,
-	}).Info("handshake successfull: new player connected")
+	}).Info("handshake successful: new player connected")
 
 	s.AddPeer(peer)
 
